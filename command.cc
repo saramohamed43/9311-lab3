@@ -1,14 +1,3 @@
-
-/*
- * 
- *
- * Template file.
- * You will need to add more code here to execute the command table.
- *
- * NOTE: You are responsible for fixing any bugs this code may have!
- *
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -28,19 +17,115 @@
 #include "command.h"
 #include "tokenizer.h"
 
+char *copyString(const std::string &s) // helper fn returns a new heap-allocated C string
+{
+    char *copy = (char *)malloc(s.length() + 1);
+    strcpy(copy, s.c_str());
+    return copy;
+}
 
 void parse(std::vector<Token> &tokens)
 {
-    Command currentCommand;
-    SimpleCommand *currentSimpleCommand = new SimpleCommand();
+    if (tokens[0].type == TOKEN_EOF) //pressed enter by mistake
+        {
+            return;
+        }
 
-    currentCommand.execute();
-    /*
-      Implement this function 
-      you must parse for all possible tokens scenario
-      right now command.execute only print the format , you will inject it in your logic.
+    Command::_currentSimpleCommand = new SimpleCommand();
 
-    */
+    for(int i=0; i<tokens.size(); i++)
+    {
+        Token token = tokens[i];
+        switch(token.type)
+        {
+            case TOKEN_COMMAND:
+                Command::_currentSimpleCommand->insertArgument(copyString(token.value));
+                break;
+            case TOKEN_ARGUMENT:
+                Command::_currentSimpleCommand->insertArgument(copyString(token.value));
+                break;
+            case TOKEN_APPEND: //store the next token as the output file
+                Command::_currentCommand._append = 1; //append mode so we don't overwrite
+                if(tokens[i+1].type == TOKEN_ARGUMENT)
+                {
+                    Command::_currentCommand._outFile = copyString(tokens[i+1].value);
+                    i++;
+                }
+                else
+                {
+                    printf("Filename can't be empty\n");
+                    Command::_currentCommand.clear();
+                    return;
+                }
+                break;
+            case TOKEN_REDIRECT: //store the next token as the output file
+                if(tokens[i+1].type == TOKEN_ARGUMENT)
+                {
+                    Command::_currentCommand._outFile = copyString(tokens[i+1].value);
+                    i++;
+                }
+                else
+                {
+                    printf("Filename can't be empty\n");
+                    Command::_currentCommand.clear();
+                    return;
+                }               
+                break;
+            case TOKEN_INPUT: //store the next token as the input file
+                if(tokens[i+1].type == TOKEN_ARGUMENT)
+                {
+                    Command::_currentCommand._inputFile = copyString(tokens[i+1].value);
+                    i++;
+                }
+                else
+                {
+                    printf("Filename can't be empty\n");
+                    Command::_currentCommand.clear();
+                    return;
+                }
+                break;
+            case TOKEN_ERROR: //store the next token as the error file
+                if(tokens[i+1].type == TOKEN_ARGUMENT)
+                {
+                    Command::_currentCommand._errFile = copyString(tokens[i+1].value);
+                    i++;
+                }
+                else
+                {
+                    printf("Filename can't be empty\n");
+                    Command::_currentCommand.clear();
+                    return;
+                }
+                break;
+            case TOKEN_BACKGROUND: //set the background flag to true
+                Command::_currentCommand._background = 1;
+                break;
+            case TOKEN_REDIRECT_AND_ERROR: //sends both the output and error to the same file
+                Command::_currentCommand._out_error = 1;
+                if(tokens[i+1].type == TOKEN_ARGUMENT)
+                {
+                    Command::_currentCommand._append = 1;
+                    Command::_currentCommand._outFile = copyString(tokens[i+1].value);
+                    Command::_currentCommand._errFile = copyString(tokens[i+1].value);
+                    i++;
+                }
+                else
+                {
+                    printf("Filename can't be empty\n");
+                    Command::_currentCommand.clear();
+                    return;
+                }
+                break;
+            case TOKEN_PIPE: //execute the current command and start a new one
+                Command::_currentCommand.insertSimpleCommand(Command::_currentSimpleCommand);
+                Command::_currentSimpleCommand = new SimpleCommand();
+                break;
+            default:
+                break;
+        }
+    }
+    Command::_currentCommand.insertSimpleCommand(Command::_currentSimpleCommand);
+    Command::_currentCommand.execute();
 }
 
 SimpleCommand::SimpleCommand()
@@ -69,13 +154,15 @@ Command::Command()
 {
     _numberOfAvailableSimpleCommands = 1;
     _simpleCommands = (SimpleCommand **)
-        malloc(_numberOfSimpleCommands * sizeof(SimpleCommand *));
+        malloc(_numberOfAvailableSimpleCommands * sizeof(SimpleCommand *));
 
     _numberOfSimpleCommands = 0;
     _outFile = 0;
     _inputFile = 0;
     _errFile = 0;
     _background = 0;
+    _append = 0;
+    _out_error = 0;
 }
 
 void Command::insertSimpleCommand(SimpleCommand *simpleCommand)
@@ -124,6 +211,8 @@ void Command::clear()
     _inputFile = 0;
     _errFile = 0;
     _background = 0;
+    _append = 0;
+    _out_error = 0;
 }
 
 void Command::print()
@@ -155,22 +244,43 @@ void Command::print()
 void Command::execute()
 {
     print();
-    /*
-        Write your code here
-    */
 
+    if(_numberOfSimpleCommands == 0)
+    {
+        return;
+    }
+
+    int pid = fork();
+    if(pid < 0)
+    {
+        printf("Fork failed\n");
+        return;
+    }
+    else if(pid == 0)
+    {
+        execvp(_simpleCommands[0]->_arguments[0], _simpleCommands[0]->_arguments);
+        perror("Execution failed");
+        exit(1);
+    }
+    else if(pid > 0)
+    {
+        waitpid(pid,0,0);
+    }
+    
     clear();
-    prompt();
 }
 
 void Command::prompt()
 {
-    printf("myshell>");
     fflush(stdout);
     std::string input;
     while (true)
     {
-        std::getline(std::cin, input); 
+        printf("myshell>");
+        if(!std::getline(std::cin, input))
+        {
+            break;
+        }
         std::vector<Token> tokens = tokenize(input);
         parse(tokens);
     }
