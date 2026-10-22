@@ -98,6 +98,12 @@ void parse(std::vector<Token> &tokens)
                 }
                 break;
             case TOKEN_BACKGROUND: //set the background flag to true
+                if(tokens[i+1].type != TOKEN_EOF)
+                {
+                    printf("& must be at the end \n");
+                    Command::_currentCommand.clear();
+                    return;
+                }
                 Command::_currentCommand._background = 1;
                 break;
             case TOKEN_REDIRECT_AND_ERROR: //sends both the output and error to the same file
@@ -117,6 +123,12 @@ void parse(std::vector<Token> &tokens)
                 }
                 break;
             case TOKEN_PIPE: //execute the current command and start a new one
+                if(Command::_currentSimpleCommand->_numberOfArguments == 0)
+                {
+                    printf("missing command before pipe \n"); // ex: | ls, ls || grep, > out | ls 
+                    Command::_currentCommand.clear();
+                    return;
+                }
                 Command::_currentCommand.insertSimpleCommand(Command::_currentSimpleCommand);
                 Command::_currentSimpleCommand = new SimpleCommand();
                 break;
@@ -124,6 +136,12 @@ void parse(std::vector<Token> &tokens)
                 break;
         }
     }
+    if(Command::_currentSimpleCommand->_numberOfArguments == 0)
+        {
+            printf("missing command \n"); // ex: ls |, > out, & 
+            Command::_currentCommand.clear();
+            return;
+        }
     Command::_currentCommand.insertSimpleCommand(Command::_currentSimpleCommand);
     Command::_currentCommand.execute();
 }
