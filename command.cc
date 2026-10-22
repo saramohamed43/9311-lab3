@@ -133,6 +133,7 @@ SimpleCommand::SimpleCommand()
     _numberOfAvailableArguments = 5;
     _numberOfArguments = 0;
     _arguments = (char **)malloc(_numberOfAvailableArguments * sizeof(char *));
+    _arguments[0] = NULL;
 }
 
 void SimpleCommand::insertArgument(char *argument)
@@ -245,38 +246,142 @@ void Command::execute()
 {
     print();
 
-    if(_numberOfSimpleCommands == 0)
+    if (_numberOfSimpleCommands == 0)
     {
         return;
     }
 
-    int pid = fork();
-    if(pid < 0)
+    int defaultin = dup(0);
+    int defaultout = dup(1);
+    int defaulterr = dup(2);
+
+    int failed = 0;
+    int pid = -1;
+    int fdin = -1;
+
+    if (_inputFile)
     {
-        printf("Fork failed\n");
-        return;
+        fdin = open(_inputFile, O_RDONLY);
+        if (fdin < 0)
+        {
+            perror("Cannot open input file");
+            failed = 1;
+        }
     }
-    else if(pid == 0)
+    else
     {
-        execvp(_simpleCommands[0]->_arguments[0], _simpleCommands[0]->_arguments);
-        perror("Execution failed");
-        exit(1);
+        fdin = dup(defaultin);
     }
-    else if(pid > 0)
+
+    if (!failed && _errFile && !_out_error)
     {
-        waitpid(pid,0,0);
+        int errfd = open(_errFile, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (errfd < 0)
+        {
+            perror("Cannot open error file");
+            close(fdin);
+            failed = 1;
+        }
+        else
+        {
+            dup2(errfd, 2);
+            close(errfd);
+        }
     }
-    
+
+    for (int i = 0; i < _numberOfSimpleCommands && !failed; i++)
+    {
+        dup2(fdin, 0);
+        close(fdin);
+
+        int fdout;
+        if (i == _numberOfSimpleCommands - 1)
+        {
+            if (_outFile)
+            {
+                int flags = O_WRONLY | O_CREAT;
+                if (_append)
+                    flags |= O_APPEND;
+                else
+                    flags |= O_TRUNC;
+
+                fdout = open(_outFile, flags, 0666);
+                if (fdout < 0)
+                {
+                    perror("Cannot open output file");
+                    failed = 1;
+                    break;
+                }
+                if (_out_error)
+                    dup2(fdout, 2);  
+            }
+            else
+            {
+                fdout = dup(defaultout);
+            }
+        }
+        else
+        {
+            int fdpipe[2];
+            if (pipe(fdpipe) == -1)
+            {
+                perror("pipe");
+                failed = 1;
+                break;
+            }
+            fdout = fdpipe[1];   
+            fdin = fdpipe[0];    
+        }
+
+        dup2(fdout, 1);
+        close(fdout);
+
+        pid = fork();
+        if (pid < 0)
+        {
+            perror("Fork failed");
+            failed = 1;
+            break;
+        }
+
+        if (pid == 0)
+        {
+            close(defaultin);
+            close(defaultout);
+            close(defaulterr);
+            if (i < _numberOfSimpleCommands - 1)
+                close(fdin);    
+
+            execvp(_simpleCommands[i]->_arguments[0], _simpleCommands[i]->_arguments);
+
+            perror("Execution failed");
+            exit(1);
+        }
+    }
+
+    dup2(defaultin, 0);
+    dup2(defaultout, 1);
+    dup2(defaulterr, 2);
+
+    close(defaultin);
+    close(defaultout);
+    close(defaulterr);
+
+    if (!failed && !_background)
+    {
+        waitpid(pid, 0, 0);
+    }
+
     clear();
 }
 
 void Command::prompt()
 {
-    fflush(stdout);
     std::string input;
     while (true)
     {
         printf("myshell>");
+        fflush(stdout);
         if(!std::getline(std::cin, input))
         {
             break;
