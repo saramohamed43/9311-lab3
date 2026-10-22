@@ -251,6 +251,36 @@ void Command::execute()
         return;
     }
 
+    // exit shell
+    if (strcmp(_simpleCommands[0]->_arguments[0], "exit") == 0)
+    {
+        printf("Good bye!!");
+        exit(0);
+    }
+
+    // cd
+    if(strcmp(_simpleCommands[0]->_arguments[0], "cd") == 0)
+    {
+        if(_simpleCommands[0]->_numberOfArguments > 1)
+        {
+            char * path = _simpleCommands[0]->_arguments[1];
+            if(chdir(path) != 0)
+            {
+                perror("cd didn't work");
+            }
+        }
+        else 
+        {
+            char * home_path = getenv("HOME");
+            if(chdir(home_path) != 0)
+            {
+                perror("cd didn't work");
+            }
+        }
+        clear();
+        return;
+    }
+
     int defaultin = dup(0);
     int defaultout = dup(1);
     int defaulterr = dup(2);
@@ -394,8 +424,24 @@ void Command::prompt()
 Command Command::_currentCommand;
 SimpleCommand *Command::_currentSimpleCommand;
 
+//writes in shell.log when a child finishes
+void log_file(int signal_number)
+{
+    int pid;
+    while((pid = waitpid(-1, 0, WNOHANG)) > 0)
+    // WNOHANG returns 0 immediatly if no child finished 
+    {
+        FILE * f = fopen("shell.log","a");
+        fprintf(f,"Child %d finished \n", pid);
+        fclose(f);
+    }
+
+}
+
 int main()
 {
+    signal(SIGINT,SIG_IGN); // ignores ctrl c signal
+    signal(SIGCHLD,log_file); // signal when a child is done
     Command::_currentCommand.prompt();
     return 0;
 }
