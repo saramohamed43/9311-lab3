@@ -17,11 +17,59 @@
 #include "command.h"
 #include "tokenizer.h"
 
-char *copyString(const std::string &s) // helper fn returns a new heap-allocated C string
+// helper fn returns a new heap-allocated C string
+char *copyString(const std::string &s) 
 {
     char *copy = (char *)malloc(s.length() + 1);
     strcpy(copy, s.c_str());
     return copy;
+}
+
+// helper fn to deal with " "
+std::string quotes_check(int &i, std::vector<Token> &tokens, int &error)
+{
+    error = 0;
+    std::string result;
+    std::string word = tokens[i].value;
+    int length = word.length();
+    char first_char = word[0];
+    char last_char = word[length -1];
+
+    if(first_char != '"') // no quotes
+    {
+        result = word;
+    }
+    else if(length >= 2 && first_char == '"' && last_char == '"')
+    // a single word with quotes "hello"
+    {
+        result = word.substr(1,length-2);
+    }
+    else
+    // multiple word "hello; world" or a single quote "
+    {
+        result = word.substr(1); // "hello -> hello
+        int closed = 0;
+    
+        while (!closed)
+        {
+            if(tokens[i+1].type == TOKEN_EOF) // no closing quote
+            {
+                error = 1;
+                return result;
+            }
+
+            i++;
+            result = result + " " + tokens[i].value;
+            std::string next = tokens[i].value;
+
+            if(next[next.length() - 1] == '"')
+            {
+                result = result.substr(0,result.length() - 1); //remove last quote
+                closed = 1;
+            }
+        }
+    }
+    return result;
 }
 
 void parse(std::vector<Token> &tokens)
@@ -39,11 +87,17 @@ void parse(std::vector<Token> &tokens)
         switch(token.type)
         {
             case TOKEN_COMMAND:
-                Command::_currentSimpleCommand->insertArgument(copyString(token.value));
-                break;
             case TOKEN_ARGUMENT:
-                Command::_currentSimpleCommand->insertArgument(copyString(token.value));
-                break;
+                {int error;
+                std::string s = quotes_check(i, tokens, error);
+                if(error == 1) // no closing "
+                {
+                    printf("Missing closing quote\n");
+                    Command::_currentCommand.clear();
+                    return;
+                }
+                Command::_currentSimpleCommand->insertArgument(copyString(s));
+                break;}
             case TOKEN_APPEND: //store the next token as the output file
                 Command::_currentCommand._append = 1; //append mode so we don't overwrite
                 if(tokens[i+1].type == TOKEN_ARGUMENT)
