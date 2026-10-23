@@ -25,6 +25,14 @@ char *copyString(const std::string &s)
     return copy;
 }
 
+// helper fn to write in shell.log
+void write_log(int pid)
+{
+    FILE *f = fopen("shell.log", "a");
+    fprintf(f, "Child %d finished \n", pid);
+    fclose(f);
+}
+
 // helper fn to deal with " "
 std::string quotes_check(int &i, std::vector<Token> &tokens, int &error)
 {
@@ -326,7 +334,7 @@ void Command::execute()
     // exit shell
     if (strcmp(_simpleCommands[0]->_arguments[0], "exit") == 0)
     {
-        printf("Good bye!!");
+        printf("Good bye!!\n");
         exit(0);
     }
 
@@ -469,9 +477,11 @@ void Command::execute()
     close(defaultout);
     close(defaulterr);
 
-    if (!failed && !_background)
+    if (!failed && !_background) //writes in shell.log (for foreground children)
     {
-        waitpid(pid, 0, 0);
+        int done = waitpid(pid, 0, 0);
+        if (done > 0)
+        write_log(done);
     }
 
     clear();
@@ -496,16 +506,14 @@ void Command::prompt()
 Command Command::_currentCommand;
 SimpleCommand *Command::_currentSimpleCommand;
 
-//writes in shell.log when a child finishes
+//writes in shell.log when a child finishes (for background children)
 void log_file(int signal_number)
 {
     int pid;
     while((pid = waitpid(-1, 0, WNOHANG)) > 0)
     // WNOHANG returns 0 immediatly if no child finished 
     {
-        FILE * f = fopen("shell.log","a");
-        fprintf(f,"Child %d finished \n", pid);
-        fclose(f);
+        write_log(pid);
     }
 
 }
