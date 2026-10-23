@@ -80,6 +80,35 @@ std::string quotes_check(int &i, std::vector<Token> &tokens, int &error)
     return result;
 }
 
+//helper fn for bonus
+void wildcard(SimpleCommand * c, const std::string & s)
+{
+    if(strchr(s.c_str(), '*') == NULL && strchr(s.c_str(), '?') == NULL)
+    {
+        // doesn't have * or ? -> add it normally 
+        c->insertArgument(copyString(s));
+        return;
+    }
+    
+    //glob_t has gl_pathc: hm names it found, gl_pathv: the names themselves in an array
+    glob_t answer; 
+    int a = glob(s.c_str(), 0, NULL, &answer); //returns 0 if glob succeeded
+    if(a == 0) // at least 1 name matched
+    {
+        for (int i = 0; i < answer.gl_pathc; i++)
+        {
+            c->insertArgument(copyString(std::string(answer.gl_pathv[i])));
+        }
+    }
+    else // no names matched 
+    {
+        c->insertArgument(copyString(s));
+    }
+
+    // frees memory of answer 
+    globfree(&answer);
+}
+
 void parse(std::vector<Token> &tokens)
 {
     if (tokens[0].type == TOKEN_EOF) //pressed enter by mistake
@@ -104,7 +133,8 @@ void parse(std::vector<Token> &tokens)
                     Command::_currentCommand.clear();
                     return;
                 }
-                Command::_currentSimpleCommand->insertArgument(copyString(s));
+                // adds all matching files to *.cc or ?.cc as args
+                wildcard(Command::_currentSimpleCommand,s);
                 break;}
             case TOKEN_APPEND: //store the next token as the output file
                 Command::_currentCommand._append = 1; //append mode so we don't overwrite
@@ -506,7 +536,7 @@ void Command::prompt()
 Command Command::_currentCommand;
 SimpleCommand *Command::_currentSimpleCommand;
 
-//writes in shell.log when a child finishes (for background children)
+//helper fn writes in shell.log when a child finishes (for background children)
 void log_file(int signal_number)
 {
     int pid;
